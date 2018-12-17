@@ -1,0 +1,254 @@
+---
+title: "Geokoder ggmap v2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Lager en adresse variabel med gatenavn, gatenummer og kommunenavn. Tar deretter ut observasjonene som ikke er skoler.
+```{r}
+library(pacman)
+
+gsi <- read.csv('file:///C:/Users/kha168/Desktop/RURED/data/GSI/GSI Generelt all informasjon alle år.csv', encoding = 'UTF-8', sep=';', stringsAsFactors = FALSE, quote='')
+gsi$Adresse <- paste(gsi$u11, gsi$eu2)
+gsi$Adresse2 <-  paste(gsi$u11)
+  
+gsi <- gsi[,c('Navn','u3', 'Adresse', 'Adresse2')]
+
+data <- read.csv('file:///C:/Users/kha168/Desktop/RURED/data/Test data/grunnskolepoeng kjønn alle år skoler.csv', encoding = 'UTF-8')
+data <- data[,c('Org.nr', 'Navn')]
+```
+
+En lokasjon per skole. Det kan tenkes at skoler har endret lokasjon, men dette vil sannsynligvis utgjøre bare marginalt på f.eks reiseavstand.
+```{r}
+#skoler <- data[!duplicated(data[,c('u3')]),]
+skoler <- data[!duplicated(data[,c('Org.nr')]),]
+```
+
+
+Merger med datase
+
+
+```{r}
+p_load(tmaptools)
+
+#geokoder1 <- data.frame(Navn = skoler$Navn, Orgnr = skoler$u3, Adresse = skoler$Adresse,lon=NA, lat=NA)
+geokoder1 <- data.frame(Navn = skoler$Navn, Orgnr = skoler$Org.nr)
+geokoder1$Navn <- as.character(geokoder1$Navn)
+#geokoder1$Adresse <- as.character(geokoder1$Adresse)
+```
+
+```{r}
+stamme <- 'https://data.brreg.no/enhetsregisteret/api/underenheter/' 
+geokoder1$Adresse2 <- 0
+
+for (i in 1: nrow(geokoder1)){
+  tryCatch({
+url <- paste0(stamme,geokoder1$Orgnr[i])
+temp_file <- rjson::fromJSON(file=url)
+geokoder1$Adresse2[i] <- paste(temp_file$beliggenhetsadresse$adresse,temp_file$beliggenhetsadresse$postnummer, temp_file$beliggenhetsadresse$poststed)
+}, error=function(e){})
+}
+```
+
+Prøver å fylle opp med manglende adresser med data fra GSI:
+
+```{r}
+mangler <- geokoder1[geokoder1$Adresse2 ==0,]
+mangler <- merge(mangler, gsi, by.x='Orgnr', by.y = 'u3')
+mangler <- mangler[!duplicated(mangler$Orgnr),]
+mangler <- mangler[,c('Orgnr', 'Adresse', 'Navn.y')]
+colnames(mangler) <- c('Orgnr', 'Adresse', 'Navn')
+
+geokoder1 <- merge(geokoder1, mangler, by=c('Orgnr'), all.x=T)
+geokoder1$Adresse2[!is.na(geokoder1$Adresse)] <- geokoder1$Adresse[!is.na(geokoder1$Adresse)]
+geokoder1$Adresse <- NULL
+geokoder1$Navn.y <- NULL
+colnames(geokoder1)[colnames(geokoder1) == 'Adresse2'] <- 'Adresse'
+colnames(geokoder1)[colnames(geokoder1) == 'Navn.x'] <- 'Navn'
+
+geokoder1$lon <- NA
+geokoder1$lat <- NA
+```
+
+
+
+```{r}
+#geokoder1$Adresse[geokoder1$Adresse2 != '0'] <- geokoder1$Adresse2[geokoder1$Adresse2 != '0']
+#geokoder1$Adresse2 <- NULL
+```
+
+```{r}
+
+for (i in 1:nrow(geokoder1)) {
+  tryCatch({
+#geokoder1[i,4:5] <- geocode_OSM(geokoder1$Adresse[i])$coords
+
+    geokoder1[i,4:5] <- ggmap::geocode(geokoder1$Adresse[i], output = 'latlon', source = 'google')
+  Sys.sleep(0.4)
+}, error=function(e){})
+}
+
+#geokoder2 <- geokoder1[is.na(geokoder1$lat),]
+#geokoder1 <- geokoder1[!is.na(geokoder1$lat),]
+
+#for (i in 1:nrow(geokoder2)) {
+#  tryCatch({
+#geokoder2[i,4:5] <- geocode_OSM(geokoder2$Navn[i])$coords
+#Sys.sleep(0.4)
+#}, error=function(e){})
+#}
+
+#geokoder3 <- geokoder2[is.na(geokoder2$lat),]
+#geokoder2 <- geokoder2[!is.na(geokoder2$lat),]
+
+
+#test <- rbind(geokoder1, geokoder2)
+```
+
+```{r}
+geokoder1$lat[geokoder1$Navn == 'Hov skole'] <- 62.8424768
+geokoder1$lon[geokoder1$Navn == 'Hov skole'] <- 11.292257
+
+geokoder1$lat[geokoder1$Navn == 'Trones skole'] <- 66.9171018
+geokoder1$lon[geokoder1$Navn == 'Trones skole'] <- 14.7654202
+
+geokoder1$lat[geokoder1$Navn == 'Ølen skule'] <- 59.6052055358887
+geokoder1$lon[geokoder1$Navn == 'Ølen skule'] <- 5.81496047973633
+```
+
+```{r}
+setwd('C:/Users/kha168/Desktop/RURED/data/Geokoder')
+write.csv(geokoder1, 'geokoder1.csv', fileEncoding = 'UTF-8')
+```
+
+```{r}
+geokoder3$lat[geokoder3$Navn == 'Mortenstua skole Iks'] <- 59.552075
+geokoder3$lon[geokoder3$Navn == 'Mortenstua skole Iks'] <- 11.341409
+
+geokoder3$lat[geokoder3$Navn == 'Ekholt 1-10 skole'] <- 59.4062983
+geokoder3$lon[geokoder3$Navn == 'Ekholt 1-10 skole'] <- 10.6905586
+
+geokoder3$lat[geokoder3$Navn == 'Childrens International School Fredrikstad AS'] <- 59.2019543
+geokoder3$lon[geokoder3$Navn == 'Childrens International School Fredrikstad AS'] <- 10.9602258
+
+geokoder3$lat[geokoder3$Navn == 'Helsepedagogisk Steinerskole på Hedemarken'] <- 60.7774714
+geokoder3$lon[geokoder3$Navn == 'Helsepedagogisk Steinerskole på Hedemarken'] <- 11.1007247
+
+geokoder3$lat[geokoder3$Navn == 'Engjom skule'] <- 61.2267836
+geokoder3$lon[geokoder3$Navn == 'Engjom skule'] <- 10.2192961
+
+geokoder3$lat[geokoder3$Navn == 'Liene skule'] <- 61.5572683
+geokoder3$lon[geokoder3$Navn == 'Liene skule'] <- 9.9365492
+
+geokoder3$lat[geokoder3$Navn == 'Ringerike Montessori AS'] <- 60.1355104
+geokoder3$lon[geokoder3$Navn == 'Ringerike Montessori AS'] <- 10.1644994
+
+geokoder3$lat[geokoder3$Navn == 'Steinsfjorden Montessoriskole Sa'] <- 60.1285735
+geokoder3$lon[geokoder3$Navn == 'Steinsfjorden Montessoriskole Sa'] <- 10.3492202
+  
+geokoder3$lat[geokoder3$Navn == 'Skagerak Primary And Middle School'] <- 59.1200727
+geokoder3$lon[geokoder3$Navn == 'Skagerak Primary And Middle School'] <- 10.2308069
+
+geokoder3$lat[geokoder3$Navn == 'Toppidrett i Telemark Ung AS'] <- 59.21200
+geokoder3$lon[geokoder3$Navn == 'Toppidrett i Telemark Ung AS'] <- 9.58854
+
+geokoder3$lat[geokoder3$Navn == 'Oasen skole Vågsbygd AS'] <- 58.1283655
+geokoder3$lon[geokoder3$Navn == 'Oasen skole Vågsbygd AS'] <- 7.9459112
+
+geokoder3$lat[geokoder3$Navn == 'Stiftelsen Lyngdal Kristne grunnskole'] <- 58.1413323
+geokoder3$lon[geokoder3$Navn == 'Stiftelsen Lyngdal Kristne grunnskole'] <- 7.0583816 
+  
+geokoder3$lat[geokoder3$Navn == 'Wang Ung Stavanger AS'] <- 58.9614227
+geokoder3$lon[geokoder3$Navn == 'Wang Ung Stavanger AS'] <- 5.7287363   
+  
+geokoder3$lat[geokoder3$Navn == 'Bruvik skule'] <- 60.5238777
+geokoder3$lon[geokoder3$Navn == 'Bruvik skule'] <-  5.5033641 
+  
+geokoder3$lat[geokoder3$Navn == 'Hjellvik Montessoriskule'] <- 60.55378
+geokoder3$lon[geokoder3$Navn == 'Hjellvik Montessoriskule'] <- 5.41313
+
+geokoder3$lat[geokoder3$Navn == 'Kolbeinsvik Montessoriskule'] <- 60.0432002
+geokoder3$lon[geokoder3$Navn == 'Kolbeinsvik Montessoriskule'] <- 5.1972238  
+
+geokoder3$lat[geokoder3$Navn == 'Stiftelsen Davinci Montessoriskole'] <- 60.36712
+geokoder3$lon[geokoder3$Navn == 'Stiftelsen Davinci Montessoriskole'] <- 5.3568
+
+geokoder3$lat[geokoder3$Navn == 'Blekken barneskule'] <- 63.1225006
+geokoder3$lon[geokoder3$Navn == 'Blekken barneskule'] <- 8.3071122
+  
+geokoder3$lat[geokoder3$Navn == 'Eidsvåg barne- og ungdomsskole'] <- 62.776236
+geokoder3$lon[geokoder3$Navn == 'Eidsvåg barne- og ungdomsskole'] <- 8.0629117
+  
+geokoder3$lat[geokoder3$Navn == 'Bakkamyra barneskole'] <- 63.4596712
+geokoder3$lon[geokoder3$Navn == 'Bakkamyra barneskole'] <- 8.0093902
+  
+geokoder3$lat[geokoder3$Navn == 'Rovde skule'] <- 62.1016044
+geokoder3$lon[geokoder3$Navn == 'Rovde skule'] <- 5.5564626
+
+geokoder3$lat[geokoder3$Navn == 'Midsund Montessoriskule AS'] <- 62.66171
+geokoder3$lon[geokoder3$Navn == 'Midsund Montessoriskule AS'] <- 6.59607
+
+geokoder3$lat[geokoder3$Navn == 'Stette Friskule Sa'] <- 62.52435
+geokoder3$lon[geokoder3$Navn == 'Stette Friskule Sa'] <- 6.59753
+
+geokoder3$lat[geokoder3$Navn == 'Ulvestad barneskule AS'] <- 62.16602
+geokoder3$lon[geokoder3$Navn == 'Ulvestad barneskule AS'] <- 5.92954
+
+geokoder3$lat[geokoder3$Navn == 'Velledalen Montessoriskule AS'] <- 62.2907566
+geokoder3$lon[geokoder3$Navn == 'Velledalen Montessoriskule AS'] <- 6.6547054
+  
+geokoder3$lat[geokoder3$Navn == 'Skaugdalen Montessoriskole Sa'] <- 63.651929
+geokoder3$lon[geokoder3$Navn == 'Skaugdalen Montessoriskole Sa'] <- 10.1453205  
+
+geokoder3$lat[geokoder3$Navn == 'Steinerskolen på Fosen'] <- 63.6849178
+geokoder3$lon[geokoder3$Navn == 'Steinerskolen på Fosen'] <- 9.6504487
+
+geokoder3$lat[geokoder3$Navn == 'Breide Oppvekstsenter'] <- 64.2458852
+geokoder3$lon[geokoder3$Navn == 'Breide Oppvekstsenter'] <- 12.3802914
+  
+geokoder3$lat[geokoder3$Navn == 'Fagerhaug International School AS'] <- 63.50885
+geokoder3$lon[geokoder3$Navn == 'Fagerhaug International School AS'] <- 10.84307 
+
+geokoder3$lat[geokoder3$Navn == 'Innherred Kristne skole'] <- 63.8176968
+geokoder3$lon[geokoder3$Navn == 'Innherred Kristne skole'] <- 10.9970574
+
+geokoder3$lat[geokoder3$Navn == 'Laskestad skole'] <- 67.7765985
+geokoder3$lon[geokoder3$Navn == 'Laskestad skole'] <- 15.013317
+
+geokoder3$lat[geokoder3$Navn == 'Mørsvik Oppvekstsenter'] <- 67.34615
+geokoder3$lon[geokoder3$Navn == 'Mørsvik Oppvekstsenter'] <- 15.59137
+
+geokoder3$lat[geokoder3$Navn == 'Bjørn Montessoriskole'] <- 66.1316279
+geokoder3$lon[geokoder3$Navn == 'Bjørn Montessoriskole'] <- 12.5637648
+
+geokoder3$lat[geokoder3$Navn == 'Bleik og Omegn Montessori Skolelag'] <- 69.2720627
+geokoder3$lon[geokoder3$Navn == 'Bleik og Omegn Montessori Skolelag'] <- 15.9501099
+  
+geokoder3$lat[geokoder3$Navn == 'Dalsgrenda Montessoriskole Sa'] <- 66.2487525
+geokoder3$lon[geokoder3$Navn == 'Dalsgrenda Montessoriskole Sa'] <- 13.992126
+  
+geokoder3$lat[geokoder3$Navn == 'Eltoft Montessoriskole AS'] <- 68.2413854
+geokoder3$lon[geokoder3$Navn == 'Eltoft Montessoriskole AS'] <- 13.6868893
+
+geokoder3$lat[geokoder3$Navn == 'Hamarøy Montessoriskole'] <- 68.01678
+geokoder3$lon[geokoder3$Navn == 'Hamarøy Montessoriskole'] <- 15.31884
+
+geokoder3$lat[geokoder3$Navn == 'Stiftelsen Tromsø International School'] <- 69.67969
+geokoder3$lon[geokoder3$Navn == 'Stiftelsen Tromsø International School'] <- 18.9790337
+
+geokoder3$lat[geokoder3$Navn == 'Karlebotn skole'] <- 70.1706589
+geokoder3$lon[geokoder3$Navn == 'Karlebotn skole'] <- 28.5753642
+```
+
+```{r}
+test <- rbind(test, geokoder3)
+```
+
+```{r}
+setwd('C:/Users/kha168/Desktop/RURED/Scripts kart/Geokoder')
+write.csv(test, 'koordinater grunnskoler.csv', fileEncoding = 'UTF-8')
+```
+
